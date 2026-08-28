@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/*
+ * Minimal, public-safe design tokens for this standalone demo.
+ *
+ * The WebMCP challenge view references a small set of semantic color
+ * names. They are defined here as a neutral dark palette so the demo is
+ * self-contained: no private ShieldOn brand system is required to run it.
+ */
+@theme {
+  --color-background: #0b0d10;
+  --color-surface: #14181d;
+  --color-foreground: #e8eaed;
+  --color-muted: #9aa3ad;
+  --color-faint: #6b747e;
+  --color-line: #262c33;
+  --color-mint: #5ecfa4;
+  --color-gold: #c9a227;
+  --color-gold-bright: #e3bb46;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
