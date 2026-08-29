@@ -7,12 +7,18 @@
  */
 
 export type EvidenceStatus = "DIRECTLY_VERIFIED" | "OPERATOR_CONFIRMED" | "UNVERIFIED";
+export type InvestigationStatus =
+  | "IN_PROGRESS"
+  | "AWAITING_HUMAN_REVIEW"
+  | "GOVERNED_FINDING_APPROVED"
+  | "CANDIDATE_REJECTED"
+  | "CLOSED";
 
 export interface Investigation {
   investigationId: string;
   company: string;
   businessQuestion: string;
-  status: "IN_PROGRESS" | "AWAITING_HUMAN_REVIEW" | "CLOSED";
+  status: InvestigationStatus;
   scope: string[];
 }
 
@@ -53,7 +59,32 @@ export interface CandidateFinding {
   disclaimer: string;
 }
 
+export interface GovernedFinding {
+  findingId: string;
+  investigationId: string;
+  candidateId: string;
+  label: string;
+  status: "GOVERNED";
+  approvedBy: "Human reviewer";
+  reviewedAt: string;
+  supportingEvidenceRefs: string[];
+  contradictionTreatment: {
+    contradictionRefs: string[];
+    status: "ACKNOWLEDGED_REQUIRES_FOLLOW_UP";
+  };
+  missingEvidenceStatus: "OPEN_ITEMS_REMAIN";
+  revenueGapEligibility: "ELIGIBLE_FOR_ASSESSMENT";
+}
+
+export interface HumanReviewSnapshot {
+  investigationStatus: InvestigationStatus;
+  decision: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedAt: string | null;
+  governedFindings: GovernedFinding[];
+}
+
 const INVESTIGATION_ID = "inv-acme-dental-consultation-decline";
+const CANDIDATE_ID = "cand-lead-handling-degradation";
 
 export const investigation: Investigation = {
   investigationId: INVESTIGATION_ID,
@@ -155,18 +186,90 @@ export const contradictions: Contradiction[] = [
 
 export const candidateFindings: CandidateFinding[] = [
   {
-    candidateId: "cand-lead-handling-degradation",
+    candidateId: CANDIDATE_ID,
     label: "Lead-handling speed and follow-up coverage may be contributing to the conversion decline.",
     supportingEvidenceRefs: ["ev-mql-volume", "ev-response-time", "ev-second-followup", "ev-conversion-rate"],
     contradictionRefs: ["contra-contacted-vs-communication-log"],
     isGoverned: false,
     disclaimer:
-      "CANDIDATE — this is not a governed ShieldOn finding. It requires human review before it can be promoted to a canonical Revenue Gap finding.",
+      "CANDIDATE — this is not a governed ShieldOn finding. It requires human review before it can be promoted to a governed finding.",
   },
 ];
 
+export const initialHumanReviewSnapshot: HumanReviewSnapshot = {
+  investigationStatus: "AWAITING_HUMAN_REVIEW",
+  decision: "PENDING",
+  reviewedAt: null,
+  governedFindings: [],
+};
+
+let humanReviewSnapshot: HumanReviewSnapshot = initialHumanReviewSnapshot;
+const reviewListeners = new Set<() => void>();
+
+function publishReviewSnapshot(next: HumanReviewSnapshot) {
+  humanReviewSnapshot = next;
+  reviewListeners.forEach((listener) => listener());
+}
+
+export function subscribeToHumanReview(listener: () => void): () => void {
+  reviewListeners.add(listener);
+  return () => reviewListeners.delete(listener);
+}
+
+export function getHumanReviewSnapshot(): HumanReviewSnapshot {
+  return humanReviewSnapshot;
+}
+
+export function approveCandidateAsHuman(candidateId: string): GovernedFinding {
+  const candidate = candidateFindings.find((item) => item.candidateId === candidateId);
+  if (!candidate) throw new Error("Candidate finding not found");
+  if (humanReviewSnapshot.decision !== "PENDING") throw new Error("Human review decision already recorded");
+
+  const reviewedAt = new Date().toISOString();
+  const governedFinding: GovernedFinding = {
+    findingId: `finding-${candidate.candidateId}`,
+    investigationId: INVESTIGATION_ID,
+    candidateId: candidate.candidateId,
+    label: candidate.label,
+    status: "GOVERNED",
+    approvedBy: "Human reviewer",
+    reviewedAt,
+    supportingEvidenceRefs: [...candidate.supportingEvidenceRefs],
+    contradictionTreatment: {
+      contradictionRefs: [...candidate.contradictionRefs],
+      status: "ACKNOWLEDGED_REQUIRES_FOLLOW_UP",
+    },
+    missingEvidenceStatus: "OPEN_ITEMS_REMAIN",
+    revenueGapEligibility: "ELIGIBLE_FOR_ASSESSMENT",
+  };
+
+  publishReviewSnapshot({
+    investigationStatus: "GOVERNED_FINDING_APPROVED",
+    decision: "APPROVED",
+    reviewedAt,
+    governedFindings: [governedFinding],
+  });
+
+  return governedFinding;
+}
+
+export function rejectCandidateAsHuman(candidateId: string): void {
+  const candidate = candidateFindings.find((item) => item.candidateId === candidateId);
+  if (!candidate) throw new Error("Candidate finding not found");
+  if (humanReviewSnapshot.decision !== "PENDING") throw new Error("Human review decision already recorded");
+
+  const reviewedAt = new Date().toISOString();
+  publishReviewSnapshot({
+    investigationStatus: "CANDIDATE_REJECTED",
+    decision: "REJECTED",
+    reviewedAt,
+    governedFindings: [],
+  });
+}
+
 export function getInvestigation(investigationId: string): Investigation | null {
-  return investigationId === INVESTIGATION_ID ? investigation : null;
+  if (investigationId !== INVESTIGATION_ID) return null;
+  return { ...investigation, status: humanReviewSnapshot.investigationStatus };
 }
 
 export function listEvidence(investigationId: string): EvidenceRecord[] | null {
@@ -183,4 +286,8 @@ export function getContradictions(investigationId: string): Contradiction[] | nu
 
 export function getCandidateFindings(investigationId: string): CandidateFinding[] | null {
   return investigationId === INVESTIGATION_ID ? candidateFindings : null;
+}
+
+export function getGovernedFindings(investigationId: string): GovernedFinding[] | null {
+  return investigationId === INVESTIGATION_ID ? humanReviewSnapshot.governedFindings : null;
 }
