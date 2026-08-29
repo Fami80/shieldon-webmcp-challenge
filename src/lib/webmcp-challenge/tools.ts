@@ -6,13 +6,9 @@ import {
   getMissingEvidence,
   getContradictions,
   getCandidateFindings,
+  getGovernedFindings,
 } from "@/lib/webmcp-challenge/data";
 
-/**
- * Minimal shape of the experimental WebMCP browser API
- * (`document.modelContext`). Not in TypeScript's DOM lib yet, so this is
- * declared locally rather than touching any shared type definitions.
- */
 interface WebMcpToolRegistration {
   name: string;
   description: string;
@@ -62,12 +58,8 @@ const tools: WebMcpToolRegistration[] = [
   {
     name: "shieldon_get_investigation",
     description:
-      "Read-only. Returns the ShieldOn investigation being examined: its ID, the business question under investigation, its current status, and its scope. Call this first to get the investigationId needed by the other shieldon_* tools.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
+      "Read-only. Returns the ShieldOn investigation being examined: its ID, the business question under investigation, its current status, and its scope. Call this first to get the investigationId needed by the other shieldon_* tools. If a human reviewer later approves or rejects the candidate, this tool returns that updated governed status.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     execute: async () => {
       const result = getInvestigation("inv-acme-dental-consultation-decline");
       if (!result) throw new Error("Investigation not found");
@@ -80,8 +72,7 @@ const tools: WebMcpToolRegistration[] = [
       "Read-only. Returns the governed evidence records ShieldOn has collected for an investigation — each with its source, capture time, verification status, and a summary or measured value. Use this to see what is actually known, as distinct from what is missing or contradictory.",
     inputSchema: investigationIdSchema,
     execute: async (input) => {
-      const investigationId = requireInvestigationId(input);
-      const result = listEvidence(investigationId);
+      const result = listEvidence(requireInvestigationId(input));
       if (!result) throw new Error("Unknown investigationId");
       return result;
     },
@@ -92,8 +83,7 @@ const tools: WebMcpToolRegistration[] = [
       "Read-only. Returns the evidence ShieldOn believes is still required to fully explain the investigation, and why it's needed. This is evidence that does not yet exist in the record — it is never itself treated as proof of anything.",
     inputSchema: investigationIdSchema,
     execute: async (input) => {
-      const investigationId = requireInvestigationId(input);
-      const result = getMissingEvidence(investigationId);
+      const result = getMissingEvidence(requireInvestigationId(input));
       if (!result) throw new Error("Unknown investigationId");
       return result;
     },
@@ -104,8 +94,7 @@ const tools: WebMcpToolRegistration[] = [
       "Read-only. Returns places where two or more evidence sources for this investigation disagree with each other, with references to the specific evidence records involved. Contradictions are signals to investigate further, not conclusions.",
     inputSchema: investigationIdSchema,
     execute: async (input) => {
-      const investigationId = requireInvestigationId(input);
-      const result = getContradictions(investigationId);
+      const result = getContradictions(requireInvestigationId(input));
       if (!result) throw new Error("Unknown investigationId");
       return result;
     },
@@ -116,46 +105,32 @@ const tools: WebMcpToolRegistration[] = [
       "Read-only. Returns CANDIDATE findings only — unverified hypotheses ShieldOn's evidence pattern suggests, each linked to its supporting evidence and any related contradictions. Candidates are explicitly not governed findings: they cannot be treated as ShieldOn's conclusion and cannot be approved through this tool. A human must review and approve a finding inside ShieldOn before it becomes canonical.",
     inputSchema: investigationIdSchema,
     execute: async (input) => {
-      const investigationId = requireInvestigationId(input);
-      const result = getCandidateFindings(investigationId);
+      const result = getCandidateFindings(requireInvestigationId(input));
+      if (!result) throw new Error("Unknown investigationId");
+      return result;
+    },
+  },
+  {
+    name: "shieldon_get_governed_findings",
+    description:
+      "Read-only. Returns only findings that have already been approved through ShieldOn's protected human-review UI. Before human approval this returns an empty list. This tool cannot approve, reject, edit, or promote any finding.",
+    inputSchema: investigationIdSchema,
+    execute: async (input) => {
+      const result = getGovernedFindings(requireInvestigationId(input));
       if (!result) throw new Error("Unknown investigationId");
       return result;
     },
   },
 ];
 
-/**
- * A dev remount (React Strict Mode's mount/cleanup/mount cycle, or a Fast
- * Refresh) re-runs the effect that calls registerShieldOnWebMcpTools() on
- * the same document. The WebMCP runtime rejects a second registerTool()
- * call for a name it already has, so this sentinel makes registration a
- * one-time-per-document operation regardless of how many times the effect
- * fires. It deliberately never resets — unregister() support isn't
- * confirmed by the runtime, so re-registering after a cleanup could throw
- * the same duplicate error again.
- */
 const REGISTRATION_SENTINEL = "__shieldonWebMcpToolsRegistered";
 
-/**
- * Registers the read-only ShieldOn WebMCP demo tools with the browser's
- * WebMCP runtime, if one is present. Safe to call when no WebMCP runtime
- * exists (e.g. a plain human visit) — it's a no-op in that case. Safe to
- * call more than once on the same document — only the first call actually
- * registers anything.
- *
- * Returns a cleanup function that unregisters every tool this specific
- * call registered (a no-op if this call was skipped as a duplicate).
- */
 export function registerShieldOnWebMcpTools(): () => void {
   const modelContext = getModelContext();
-  if (!modelContext) {
-    return () => {};
-  }
+  if (!modelContext) return () => {};
 
   const doc = document as unknown as Record<string, boolean>;
-  if (doc[REGISTRATION_SENTINEL]) {
-    return () => {};
-  }
+  if (doc[REGISTRATION_SENTINEL]) return () => {};
   doc[REGISTRATION_SENTINEL] = true;
 
   const handles: WebMcpToolHandle[] = [];
@@ -165,9 +140,7 @@ export function registerShieldOnWebMcpTools(): () => void {
   }
 
   return () => {
-    for (const handle of handles) {
-      handle.unregister?.();
-    }
+    for (const handle of handles) handle.unregister?.();
   };
 }
 
