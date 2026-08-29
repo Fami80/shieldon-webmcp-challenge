@@ -198,6 +198,7 @@ To be explicit: the challenge work is the agent-facing layer. The underlying Shi
 - **No network calls.** The demo reads from an in-process module. It makes no outbound requests and contacts no third-party service.
 - **Read-only by construction.** No registered tool mutates anything, in this demo or anywhere else.
 
+Built with Codex-assisted development for The WebMCP Challenge.
 ## 14. License
 
 MIT. See [LICENSE](LICENSE).
