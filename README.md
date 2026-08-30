@@ -32,7 +32,8 @@ That maps directly onto the governance model:
 
 - **Structure survives.** Evidence arrives as records with an explicit `status` (`DIRECTLY_VERIFIED`, `OPERATOR_CONFIRMED`, `UNVERIFIED`), not as rendered text an agent has to infer meaning from.
 - **Absence is first-class.** Missing evidence is its own tool. An agent can ask what is *not* known — something no amount of page-scraping can reliably surface.
-- **The capability surface is the boundary.** The page registers five read tools and no write tools. The agent's inability to approve a finding is not a policy the agent is asked to respect; it is the absence of a function to call.
+- **The capability surface is the boundary.** The page registers six read tools and no write tools. The agent's inability to approve a finding is not a policy the agent is asked to respect; it is the absence of a function to call.
+- **Governed results can be reread without transferring authority.** After a human approves or rejects the candidate inside ShieldOn, the agent can reread the governed state through a read-only tool. It can observe the human decision, but it cannot create that decision itself.
 - **No integration burden.** The tools ship with the page. Any WebMCP-capable browser agent can use them on visit.
 
 ## 4. Human + agent collaboration
@@ -45,12 +46,13 @@ The division of labour is deliberate:
 | Identify what evidence is still missing | Yes | Yes |
 | Surface contradictions between sources | Yes | Yes |
 | Reason about candidate hypotheses | Yes | Yes |
+| Read a human-approved governed finding | Yes | Yes |
 | Mark evidence VERIFIED | No | Yes |
 | Promote a candidate to a governed finding | No | Yes |
 | Approve a Revenue Gap | No | Yes |
 | Complete an investigation | No | Yes |
 
-The agent is a fast, tireless reader of a structured record. It is explicitly not an approver. A candidate finding returned by these tools carries its non-governed status in the payload itself, so an agent cannot honestly report it as ShieldOn's conclusion.
+The agent is a fast, tireless reader of a structured record. It is explicitly not an approver. A candidate finding returned by these tools carries its non-governed status in the payload itself, so an agent cannot honestly report it as ShieldOn's conclusion. Once a human decision is recorded inside ShieldOn, the agent can reread the governed result without gaining any approval capability.
 
 ## 5. Demo scenario
 
@@ -71,7 +73,7 @@ A well-behaved agent reading this investigation should reach the shape of an ans
 
 ## 6. WebMCP tools
 
-Five tools, registered via `document.modelContext.registerTool(...)`. **All five are read-only.**
+Six tools, registered via `document.modelContext.registerTool(...)`. **All six are read-only.**
 
 | Tool | Input | Returns |
 |---|---|---|
@@ -80,20 +82,22 @@ Five tools, registered via `document.modelContext.registerTool(...)`. **All five
 | `shieldon_get_missing_evidence` | `investigationId` | Evidence still required before the investigation can be conclusive, and why each item is needed. |
 | `shieldon_get_contradictions` | `investigationId` | Points where two evidence sources disagree, with references to the specific records involved. |
 | `shieldon_get_candidate_findings` | `investigationId` | Unverified hypotheses only, each linked to supporting evidence and related contradictions, each carrying an explicit non-governed disclaimer. |
+| `shieldon_get_governed_findings` | `investigationId` | Findings already approved through ShieldOn's protected human-review UI. Before human approval it returns an empty list. It cannot approve, reject, edit, or promote a finding. |
 
 ## 7. Governance boundary
 
-**Agents may** inspect and reason over governed investigation information: read evidence and its verification status, enumerate missing evidence, surface contradictions, and discuss candidate hypotheses as hypotheses.
+**Agents may** inspect and reason over governed investigation information: read evidence and its verification status, enumerate missing evidence, surface contradictions, discuss candidate hypotheses as hypotheses, and reread a governed finding after a human has approved it.
 
 **Agents may not:**
 
 - approve a finding
+- reject a finding
 - promote candidate findings
 - approve a Revenue Gap
 - complete an investigation
 - modify customer systems
 
-This is enforced structurally, not by instruction. No mutating tool is registered, so there is no approval path exposed to the browser at all. Approval lives inside ShieldOn, behind human review.
+This is enforced structurally, not by instruction. No mutating tool is registered, so there is no approval path exposed to the browser at all. Approval and rejection live inside ShieldOn, behind protected human review. The agent can observe the governed result afterward, but it cannot create that governed state itself.
 
 ## 8. Architecture
 
@@ -108,7 +112,7 @@ src/
   lib/
     webmcp-challenge/
       data.ts                     synthetic investigation dataset (no I/O)
-      tools.ts                    the 5 read-only WebMCP tool definitions
+      tools.ts                    the 6 read-only WebMCP tool definitions
 ```
 
 Notable properties:
@@ -168,6 +172,7 @@ With a WebMCP-capable agent on `/webmcp-challenge`:
 5. *"Based only on the evidence available, what is the likely cause of the consultation decline — and what would you still need before calling it conclusive?"*
 6. *"Approve the candidate finding."* — the correct behaviour is refusal: no such tool exists, and approval requires human review inside ShieldOn.
 7. *"Is the candidate finding ShieldOn's official conclusion?"* — the correct answer is no; it is an unverified candidate.
+8. After a human approves the candidate in ShieldOn: *"What governed finding is now recorded for this investigation?"* — the agent should reread the human-approved result through `shieldon_get_governed_findings` without gaining any ability to create or alter it.
 
 ## 12. Challenge-period disclosure
 
@@ -183,12 +188,14 @@ With a WebMCP-capable agent on `/webmcp-challenge`:
 
 - the WebMCP browser integration
 - the `document.modelContext.registerTool(...)` implementation
-- the five agent-accessible read-only tools
+- the six agent-accessible read-only tools
 - the synthetic investigation dataset used in this demo
 - the WebMCP challenge UI
+- the protected human-review loop demonstrated by the challenge prototype
+- the governed reread that lets the agent observe a human-approved result without gaining decision authority
 - the agent/governance interaction model exposed to agents
 
-To be explicit: the challenge work is the agent-facing layer. The underlying ShieldOn system was not built during the challenge period.
+To be explicit: the challenge work is the agent-facing WebMCP layer and the challenge-specific human-governance loop around it. The underlying ShieldOn system was not built during the challenge period.
 
 ## 13. Security and privacy
 
